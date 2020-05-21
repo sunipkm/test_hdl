@@ -1,0 +1,13 @@
+*.o
+*.ko
+*.out
+*.original
+*.slxc
+**/slprj/*
+**/ipcore/*
+**/hdlsrc/*
+**/.vscode/*
+*o.cmd
+*.mod
+*.symvers
+*.order
