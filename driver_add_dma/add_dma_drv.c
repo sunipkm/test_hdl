@@ -45,6 +45,7 @@
 #include <linux/kernel.h>
 #include <linux/dma-mapping.h>
 #include <linux/slab.h>
+#include <linux/dma/xilinx_dma.h>
 #include <linux/cdev.h>
 #include <linux/device.h>
 #include <linux/fs.h>
@@ -58,7 +59,7 @@
 
 MODULE_LICENSE("GPL");
 
-#define DRIVER_NAME "add_dma"
+#define DRIVER_NAME "add_dma: "
 #define CHANNEL_COUNT 2
 #define TX_CHANNEL 0
 #define RX_CHANNEL 1
@@ -90,7 +91,6 @@ struct add_dma_channel
 	dma_cookie_t cookie;
 	dma_addr_t dma_handle;
 	u32 direction; /* DMA_MEM_TO_DEV or DMA_DEV_TO_MEM */
-	struct scatterlist sglist;
 };
 
 /* Allocate the channels for this example statically rather than dynamically for simplicity.
@@ -121,12 +121,17 @@ static void start_transfer(struct add_dma_channel *pchannel_p)
 	/* For now use a single entry in a scatter gather list just for future
 	 * flexibility for scatter gather.
 	 */
-	sg_init_table(&pchannel_p->sglist, 1);
-	sg_dma_address(&pchannel_p->sglist) = pchannel_p->dma_handle;
-	sg_dma_len(&pchannel_p->sglist) = interface_p->length;
+	// sg_init_table(&pchannel_p->sglist, 1);
+	// sg_dma_address(&pchannel_p->sglist) = pchannel_p->dma_handle;
+	// sg_dma_len(&pchannel_p->sglist) = interface_p->length;
 
-	chan_desc = dma_device->device_prep_slave_sg(pchannel_p->channel_p, &pchannel_p->sglist, 1,
-												 pchannel_p->direction, flags, NULL);
+	/* Step 5, create a buffer (channel)  descriptor for the buffer since only a  
+	 * single buffer is being used for this transfer
+	 */
+	chan_desc = dmaengine_prep_slave_single(pchannel_p->channel_p, pchannel_p->interface_phys_addr, interface_p->length, pchannel_p->direction, flags);
+
+	// chan_desc = dma_device->device_prep_slave_sg(pchannel_p->channel_p, &pchannel_p->sglist, 1,
+	// 											 pchannel_p->direction, flags, NULL);
 
 	/* Make sure the operation was completed successfully
 	 */
@@ -143,7 +148,6 @@ static void start_transfer(struct add_dma_channel *pchannel_p)
 		 * then submit the transaction to the DMA engine so that it's queued
 		 * up to be processed later and get a cookie to track it's status
 		 */
-		init_completion(&pchannel_p->cmp);
 
 		pchannel_p->cookie = dmaengine_submit(chan_desc);
 		if (dma_submit_error(pchannel_p->cookie))
@@ -151,7 +155,7 @@ static void start_transfer(struct add_dma_channel *pchannel_p)
 			printk(KERN_ERR DRIVER_NAME "Submit error\n");
 			return;
 		}
-
+		init_completion(&pchannel_p->cmp);
 		/* Start the DMA transaction which was previously queued up in the DMA engine
 		 */
 		dma_async_issue_pending(pchannel_p->channel_p);
