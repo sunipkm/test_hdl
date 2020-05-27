@@ -114,6 +114,20 @@ static void sync_callback(void *completion)
  */
 static void start_transfer(struct add_dma_channel *pchannel_p)
 {
+	if (pchannel_p->direction == DMA_DEV_TO_MEM) // rx channel only, configure the ADD DMA IP
+	{
+		void *add_ip_reg = ioremap_nocache(0x43c00000, 0x10000); // map 64k of address space
+		printk(KERN_INFO DRIVER_NAME "Setting up ADD DMA IP: Unique ID %d\n", ioread32(add_ip_reg + 0xc)); // verify unique ID
+		// reset the system
+		iowrite32(0x1, add_ip_reg + 0x0);
+		// set the length
+		iowrite32(pchannel_p->interface_p->length, add_ip_reg + 0x8);
+		// print status
+		printk(KERN_INFO DRIVER_NAME "Setting up ADD DMA IP: Length set to %d, requested %d\n", ioread32(add_ip_reg + 0x8), pchannel_p->interface_p->length); // verify length
+		// enable
+		printk(KERN_INFO DRIVER_NAME "Reset: 0x%01x Enable: 0x%01x Length: %d UID: %d\n", ioread32(add_ip_reg + 0x0), ioread32(add_ip_reg + 0x4), ioread32(add_ip_reg + 0x8), ioread32(add_ip_reg + 0xc));
+		iounmap(add_ip_reg);
+	}
 	enum dma_ctrl_flags flags = DMA_CTRL_ACK | DMA_PREP_INTERRUPT;
 	struct dma_async_tx_descriptor *chan_desc;
 	struct add_dma_channel_interface *interface_p = pchannel_p->interface_p;
@@ -166,7 +180,8 @@ static void start_transfer(struct add_dma_channel *pchannel_p)
  */
 static void wait_for_transfer(struct add_dma_channel *pchannel_p)
 {
-	unsigned long timeout = msecs_to_jiffies(3000);
+	unsigned long timeout = msecs_to_jiffies(10000);
+	printk(KERN_INFO DRIVER_NAME "Transfer on channel %s: Timeout set for %d\n", pchannel_p->direction == DMA_DEV_TO_MEM ? "TX" : "RX", timeout);
 	enum dma_status status;
 
 	pchannel_p->interface_p->status = PROXY_BUSY;
@@ -174,13 +189,15 @@ static void wait_for_transfer(struct add_dma_channel *pchannel_p)
 	/* Wait for the transaction to complete, or timeout, or get an error
 	 */
 	timeout = wait_for_completion_timeout(&pchannel_p->cmp, timeout);
+	printk(KERN_INFO DRIVER_NAME "Transfer on channel %s: Timeout after wait %d\n", pchannel_p->direction == DMA_DEV_TO_MEM ? "TX" : "RX", timeout);
 	status = dma_async_is_tx_complete(pchannel_p->channel_p, pchannel_p->cookie, NULL, NULL);
-	status = DMA_COMPLETE;
+	printk(KERN_INFO DRIVER_NAME "Transfer on channel %s: Status = %d\n", pchannel_p->direction == DMA_DEV_TO_MEM ? "TX" : "RX", status);
+	// status = DMA_COMPLETE;
 
 	if (timeout == 0)
 	{
 		pchannel_p->interface_p->status = PROXY_TIMEOUT;
-		printk(KERN_ERR DRIVER_NAME "DMA timed out\n");
+		printk(KERN_ERR DRIVER_NAME "%s DMA timed out\n", pchannel_p->direction == DMA_DEV_TO_MEM ? "TX" : "RX");
 	}
 	else
 	if (status != DMA_COMPLETE)
@@ -207,6 +224,7 @@ static void transfer(struct add_dma_channel *pchannel_p)
 										  offsetof(struct add_dma_channel_interface, buffer));
 
 	start_transfer(pchannel_p);
+	// if (pchannel_p->direction == DMA_DEV_TO_MEM) // wait for transfer on tx only
 	wait_for_transfer(pchannel_p);
 }
 

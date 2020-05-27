@@ -8,6 +8,7 @@
 **/hdlsrc/*
 **/.vscode/*
 *o.cmd
-*.mod
+*.mod*
 *.symvers
 *.order
+**/*mod.c
